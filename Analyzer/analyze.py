@@ -133,8 +133,6 @@ class StockAnalyzer(Analyzer):
         self._daily_prices = self._daily_prices.groupby('ticker').sum()
         #print self._daily_prices
 
-
-
     #fill 0 to NAN values
     def _fill_null_value(self):
         pass
@@ -174,7 +172,7 @@ class StockAnalyzer(Analyzer):
         return self._accum_benchmark_pnl[-1] + pnl
 
     def _cal_daily_return(self, pnl):
-        return pnl / (self._total_capital + self._accum_pnl[-1])
+        return pnl / (self._total_capital + self._accum_pnl[-2])
 
     def _cal_accum_return(self, ret):
         return self._accum_return[-1] + ret
@@ -184,7 +182,7 @@ class StockAnalyzer(Analyzer):
         return (1 + self._accum_return[-1]) ** (250/self._period) - 1
 
     def _cal_benchmark_return(self, pnl):
-        return pnl / (self._total_capital + self._accum_benchmark_pnl[-1])
+        return pnl / (self._total_capital + self._accum_benchmark_pnl[-2])
 
     def _cal_accum_benchmark_return(self, ret):
         return self._accum_benchmark_return[-1] + ret
@@ -224,7 +222,9 @@ class StockAnalyzer(Analyzer):
         return np.std(np.array(self._benchmark_return)) * np.sqrt(250)
 
     def _cal_beta(self):
-        return np.corrcoef(self._benchmark_return, self._daily_return)[0, 1]
+        #print np.cov(self._benchmark_return, self._daily_return)[0][1]
+        #print np.array(self._benchmark_return).var()
+        return np.cov(self._benchmark_return, self._daily_return)[0][1] / np.array(self._benchmark_return).var()
 
     def _cal_alpha(self):
         return self._annual_return - (BEN_RATE + self._beta * (self._benchmark_annual_return - BEN_RATE))
@@ -232,7 +232,7 @@ class StockAnalyzer(Analyzer):
     def _cal_sharpe_ratio(self):
         return ((self._annual_return - BEN_RATE) / self._cal_portfolio_volatility())
 
-    def analyze(self):
+    def _generate_pnl_and_returns_from_data(self):
         first_day = True
         for date in self._date_sequence[1:]:
             self._get_daily_data(date)
@@ -248,7 +248,7 @@ class StockAnalyzer(Analyzer):
             self._daily_pnl.append(pnl)
             benchmark_pnl = self._cal_benchmark_pnl()
             self._benchmark_pnl.append(benchmark_pnl)
-            #print self._accumulated_pnl[-1] + pnl
+            # Pre-close total pnl of deposit is at accum_return[-2]
             accum_pnl = self._cal_accum_pnl(pnl)
             self._accum_pnl.append(accum_pnl)
             accum_benchmark_pnl = self._cal_benchmark_accum_pnl(benchmark_pnl)
@@ -263,6 +263,34 @@ class StockAnalyzer(Analyzer):
             self._accum_benchmark_return.append(accum_benchmark_return)
             excess = self._cal_excess_accum_return()
             self._excess_accum_return.append(excess)
+
+    def _generate_pnl_and_returns_from_config(self, pnl, returns):
+        # use existing pnl and returns files
+        pnl = pd.read_csv(pnl)
+        returns = pd.read_csv(returns)
+        self._daily_pnl += pnl['strategy_daily_pnl'].tolist()
+        self._accum_pnl += pnl['strategy_accumulated_pnl'].tolist()
+        self._benchmark_pnl += pnl['benchmark_daily_pnl'].tolist()
+        self._accum_benchmark_pnl += pnl['benchmark_accumulated_pnl'].tolist()
+
+        self._daily_return += returns['strategy_daily_return'].tolist()
+        self._benchmark_return += returns['benchmark_daily_return'].tolist()
+        for index in range(len(self._daily_return)):
+            if index == 0:
+                self._accum_return[index] = self._daily_return[index]
+                self._accum_benchmark_return[index] = self._benchmark_return[index]
+                self._excess_accum_return[index] = self._daily_return[index] - self._benchmark_return[index]
+            else:
+                self._accum_return.append(self._accum_return[index - 1] + self._daily_return[index])
+                self._accum_benchmark_return.append(self._accum_benchmark_return[index - 1] + self._benchmark_return[index])
+                self._excess_accum_return.append(self._accum_return[index] - self._accum_benchmark_return[index])
+
+    def analyze(self, by_config=False, pnl='', returns=''):
+
+        if by_config:
+            self._generate_pnl_and_returns_from_config(pnl, returns)
+        else:
+            self._generate_pnl_and_returns_from_data()
 
         #calculate risk matrics
         self._max_retrace, self._max_retrace_start, self._max_retrace_end = self._cal_max_retrace()
@@ -287,7 +315,10 @@ class StockAnalyzer(Analyzer):
         df.to_csv(self._save_path + 'pnl.csv')
 
     def return_to_csv(self):
-        df = pd.DataFrame({'strategy_daily_return': self._daily_return[1:], 'benchmark_daily_return': self._benchmark_return[1:]}, self._date_sequence[1:])
+        df = pd.DataFrame({'strategy_daily_return': self._daily_return[1:],\
+                           'benchmark_daily_return': self._benchmark_return[1:],\
+                           'strategy_accumulated_return': self._accum_return[1:],\
+                           'benchmark_accumulated_return': self._accum_benchmark_return[1:]}, self._date_sequence[1:])
         df.to_csv(self._save_path + 'return.csv')
 
     def get_context(self):
