@@ -227,7 +227,7 @@ class StockAnalyzer(Analyzer):
         return np.corrcoef(self._benchmark_return, self._daily_return)[0, 1]
 
     def _cal_alpha(self):
-        return self._annual_return - (BEN_RATE + self._beta(self._benchmark_annual_return - BEN_RATE))
+        return self._annual_return - (BEN_RATE + self._beta * (self._benchmark_annual_return - BEN_RATE))
 
     def _cal_sharpe_ratio(self):
         return ((self._annual_return - BEN_RATE) / self._cal_portfolio_volatility())
@@ -271,6 +271,7 @@ class StockAnalyzer(Analyzer):
         self._volatility = self._cal_portfolio_volatility()
         self._benchmark_volatility = self._cal_benchmark_volatility()
         self._beta = self._cal_beta()
+        self._alpha = self._cal_alpha()
         self._sharpe_ratio = self._cal_sharpe_ratio()
 
         #self._cal_annual_return()
@@ -298,7 +299,7 @@ class StockAnalyzer(Analyzer):
                 'excess_accum_return': self._excess_accum_return,\
                 'max_retrace': self._max_retrace, 'max_retrace_start': self._max_retrace_start,\
                 'max_retrace_end': self._max_retrace_end,\
-                'beta': self._beta, 'volatility': self._volatility, 'benchmark_volatility': self._benchmark_volatility,\
+                'beta': self._beta, 'alpha': self._alpha, 'volatility': self._volatility, 'benchmark_volatility': self._benchmark_volatility,\
                 'sharpe_ratio': self._sharpe_ratio}
 
 class Plotter(object):
@@ -432,6 +433,7 @@ class HTMLPlotter(Plotter):
         self._index_table = self._page << div(cl='index_area', id='risk_index_area') << table()
         self._annual_return = self._index_table << tr() << td('Annual Return') + span() + td(self._context['annual_return']) + br()
         self._benchmark_annual_return = self._index_table << tr() << td('Benchmark Annual Return') + span() + td(self._context['benchmark_annual_return']) + br()
+        self._alpha = self._index_table << tr() << td('Alpha') + span() + td(self._context['alpha']) + br()
         self._beta = self._index_table << tr() << td('Beta') + span() + td(self._context['beta']) + br()
         self._sharpe_ratio = self._index_table << tr() << td('Sharpe Ratio') + span() + td(self._context['sharpe_ratio']) + br()
         self._max_retrace = self._index_table << tr() << td('Max Retrace') + span() + td(self._context['max_retrace']) + br()
