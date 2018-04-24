@@ -5,7 +5,7 @@ from Analyzer import *
 #get data and analyze
 sa = StockAnalyzer()
 #initialize with test saving path
-sa.init_by_config('2018-03-01', '2018-03-22', 1000000, 600208, 'test_data/', 'test_output/')
+sa.init_by_config('2018-03-01', '2018-03-22', 1000, 600208, 'test_data/', 'test_output/')
 sa.analyze()
 
 #get context for plotting

@@ -1,4 +1,5 @@
 #coding=utf-8
+import os
 import numpy as np
 import pandas as pd
 from datetime import datetime as dt
@@ -9,6 +10,8 @@ from matplotlib.ticker import Formatter
 from pyh import *
 
 TO_PCT = 100.0
+#set global params
+BEN_RATE = 0.04 #risk-free rate
 
 class MyFormatter(Formatter):
     def __init__(self, dates, fmt='%Y%m'):
@@ -87,22 +90,25 @@ class StockAnalyzer(Analyzer):
             self._save_path = save_path
         else:
             self._save_path = save_path + '/'
-        times = start_date.split('-')
-        self._date_sequence.append(pd.Timestamp(dt(int(times[0]), int(times[1]), int(times[2])) + tdelta(days=-1)))
         self._start_date = pd.Timestamp(start_date)
         self._end_date = pd.Timestamp(end_date)
-        self._period = int(str(self._end_date - self._start_date).split(' ')[0]) + 1
+        times = start_date.split('-')
+        self._date_sequence.append(pd.Timestamp(dt(int(times[0]), int(times[1]), int(times[2])) + tdelta(days=-1)))
+        for date in pd.date_range(self._start_date, self._end_date, freq='D'):
+            date_str = str(date).split(' ')[0]
+            if self._has_date(date_str):
+                self._date_sequence.append(date_str)
+        self._period = len(self._date_sequence) - 1
         self._total_capital = capital
         self._benchmark = benchmark
 
+    def _has_date(self, date):
+        return os.path.exists(self._data_path + date + '_trades.csv')
+
     def _get_daily_data(self, date):
-        try:
-            self._daily_positions = pd.read_csv(self._data_path + date + '_position.csv')
-            self._daily_trades = pd.read_csv(self._data_path + date + '_trades.csv')
-            self._daily_prices = pd.read_csv(self._data_path + date + '_price.csv')
-        except:
-            return False
-        return True
+        self._daily_positions = pd.read_csv(self._data_path + date + '_position.csv')
+        self._daily_trades = pd.read_csv(self._data_path + date + '_trades.csv')
+        self._daily_prices = pd.read_csv(self._data_path + date + '_price.csv')
 
     def _preprocess_daily_data(self):
         #step 1 remove irrelevant columns
@@ -174,8 +180,8 @@ class StockAnalyzer(Analyzer):
         return self._accum_return[-1] + ret
 
     def _cal_annual_return(self):
-        #[（投资内收益 / 本金）/ 投资天数] * 365 ×100%
-        return (self._accum_return[-1] / self._period) * 365
+        # portfolio annual return formula: ((1 + p)**(250/n) - 1)
+        return (1 + self._accum_return[-1]) ** (250/self._period) - 1
 
     def _cal_benchmark_return(self, pnl):
         return pnl / (self._total_capital + self._accum_benchmark_pnl[-1])
@@ -184,7 +190,8 @@ class StockAnalyzer(Analyzer):
         return self._accum_benchmark_return[-1] + ret
 
     def _cal_benchmark_annual_return(self):
-        return (self._accum_benchmark_return[-1] / self._period) * 365
+        # benchmark annual return formula: ((1 + p)**(250/n) - 1)
+        return (1 + self._accum_benchmark_return[-1]) ** (250 / self._period) - 1
 
     def _cal_excess_accum_return(self):
         return self._accum_return[-1] - self._accum_benchmark_return[-1]
@@ -209,27 +216,26 @@ class StockAnalyzer(Analyzer):
         return pivot, start, end
 
     def _cal_portfolio_volatility(self):
-        return np.std(np.array(self._daily_return))
+        # portfolio volatility formula: sqrt(250) * stddev(daily_return)
+        return np.std(np.array(self._daily_return)) * np.sqrt(250)
 
     def _cal_benchmark_volatility(self):
-        return np.std(np.array(self._benchmark_return))
+        # portfolio volatility formula: sqrt(250) * stddev(benchmark_return)
+        return np.std(np.array(self._benchmark_return)) * np.sqrt(250)
 
     def _cal_beta(self):
         return np.corrcoef(self._benchmark_return, self._daily_return)[0, 1]
 
+    def _cal_alpha(self):
+        return self._annual_return - (BEN_RATE + self._beta(self._benchmark_annual_return - BEN_RATE))
+
     def _cal_sharpe_ratio(self):
-        return (self._annual_return / self._cal_portfolio_volatility())
+        return ((self._annual_return - BEN_RATE) / self._cal_portfolio_volatility())
 
     def analyze(self):
-        time_sequence = pd.date_range(self._start_date, self._end_date, freq='D')
-        #print time_sequence
         first_day = True
-        for date in time_sequence:
-            #print date
-            date_str = str(date).split(' ')[0]
-            if not self._get_daily_data(date_str):
-                continue
-            self._date_sequence.append(date_str)
+        for date in self._date_sequence[1:]:
+            self._get_daily_data(date)
             self._preprocess_daily_data()
             if first_day:
                 self._benchmark_price = self._daily_prices.loc[self._benchmark]['pre_close_price']
@@ -257,6 +263,8 @@ class StockAnalyzer(Analyzer):
             self._accum_benchmark_return.append(accum_benchmark_return)
             excess = self._cal_excess_accum_return()
             self._excess_accum_return.append(excess)
+
+        #calculate risk matrics
         self._max_retrace, self._max_retrace_start, self._max_retrace_end = self._cal_max_retrace()
         self._annual_return = self._cal_annual_return()
         self._benchmark_annual_return = self._cal_benchmark_annual_return()
